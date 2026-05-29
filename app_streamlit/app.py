@@ -340,9 +340,9 @@ def generar_interpretacion(datos, resultado):
     
     # Análisis de tenure
     if datos['tenure'] <= 6:
-        factores_riesgo.append("• **Cliente nuevo** (≤ 6 meses): Los clientes recientes tienen mayor probabilidad de abandono.")
+        factores_riesgo.append("- **Cliente nuevo** (≤ 6 meses): Los clientes recientes tienen mayor probabilidad de abandono.")
     elif datos['tenure'] >= 48:
-        factores_proteccion.append("• **Cliente establecido** (≥ 48 meses): La antigüedad reduce el riesgo de churn.")
+        factores_proteccion.append("- **Cliente establecido** (≥ 48 meses): La antigüedad reduce el riesgo de churn.")
     
     # Análisis de contrato
     if datos['Contract'] == 'Month-to-month':
@@ -364,7 +364,7 @@ def generar_interpretacion(datos, resultado):
         1 if datos.get('DeviceProtection') == 'Yes' else 0
     ])
     if servicios_contratados <= 1:
-        factores_riesgo.append("• **Pocos servicios adicionales**: Menor vinculación con el proveedor.")
+        factores_riesgo.append("- **Pocos servicios adicionales**: Menor vinculación con el proveedor.")
     elif servicios_contratados >= 3:
         factores_proteccion.append("- **Múltiples servicios contratados**: Mayor vinculación y dependencia del servicio.")
     
