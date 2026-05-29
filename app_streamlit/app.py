@@ -73,10 +73,14 @@ st.markdown("""
         color: #2e7d32;
     }
     .metric-card {
-        background-color: #f5f5f5;
+        background-color: #e0e0e0;
         padding: 1rem;
         border-radius: 8px;
         text-align: center;
+        color: #212121 !important;
+    }
+    .metric-card h2, .metric-card h4 {
+        color: #212121 !important;
     }
     .info-box {
         background-color: #e3f2fd;
@@ -342,15 +346,15 @@ def generar_interpretacion(datos, resultado):
     
     # Análisis de contrato
     if datos['Contract'] == 'Month-to-month':
-        factores_riesgo.append("• **Contrato mensual**: Mayor flexibilidad de salida, asociado a mayor churn.")
+        factores_riesgo.append("- **Contrato mensual**: Mayor flexibilidad de salida, asociado a mayor churn.")
     else:
-        factores_proteccion.append(f"• **Contrato {datos['Contract']}**: Mayor compromiso contractual reduce el riesgo.")
+        factores_proteccion.append(f"- **Contrato {datos['Contract']}**: Mayor compromiso contractual reduce el riesgo.")
     
     # Análisis de método de pago
     if datos['PaymentMethod'] == 'Electronic check':
-        factores_riesgo.append("• **Pago por cheque electrónico**: Método asociado a mayor tasa de abandono.")
+        factores_riesgo.append("- **Pago por cheque electrónico**: Método asociado a mayor tasa de abandono.")
     else:
-        factores_proteccion.append(f"• **{datos['PaymentMethod']}**: Método de pago más estable.")
+        factores_proteccion.append(f"- **{datos['PaymentMethod']}**: Método de pago más estable.")
     
     # Análisis de servicios
     servicios_contratados = sum([
@@ -362,11 +366,11 @@ def generar_interpretacion(datos, resultado):
     if servicios_contratados <= 1:
         factores_riesgo.append("• **Pocos servicios adicionales**: Menor vinculación con el proveedor.")
     elif servicios_contratados >= 3:
-        factores_proteccion.append("• **Múltiples servicios contratados**: Mayor vinculación y dependencia del servicio.")
+        factores_proteccion.append("- **Múltiples servicios contratados**: Mayor vinculación y dependencia del servicio.")
     
     # Análisis de cargos
     if datos['MonthlyCharges'] > 80:
-        factores_riesgo.append("• **Cargos mensuales elevados** (> $80): Mayor presión económica sobre el cliente.")
+        factores_riesgo.append("- **Cargos mensuales elevados** (> $80): Mayor presión económica sobre el cliente.")
     
     # Construir interpretación
     if resultado['prediccion'] == 1:
@@ -821,15 +825,7 @@ if modelo_cargado:
         
         st.divider()
         
-        # Disclaimer
-        st.markdown("""
-        <div class="info-box">
-            <strong>ℹ️ Nota importante:</strong> Esta predicción está basada en un modelo de red neuronal entrenado 
-            con datos históricos. La probabilidad estimada representa el riesgo relativo de abandono según los patrones 
-            aprendidos, pero no garantiza el comportamiento futuro del cliente. Se recomienda utilizar esta información 
-            como apoyo en la toma de decisiones de retención.
-        </div>
-        """, unsafe_allow_html=True)
+
 
 else:
     # Mensaje de error si no se pudo cargar el modelo
