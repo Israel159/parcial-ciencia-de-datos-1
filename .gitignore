@@ -1,9 +1,0 @@
-__pycache__/
-.ipynb_checkpoints/
-*.pkl
-*.keras
-*.h5
-*.pyc
-.DS_Store
-
-modelo_final/
