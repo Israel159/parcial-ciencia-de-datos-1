@@ -1,0 +1,508 @@
+---
+title: "Predicción de Churn con Redes Neuronales"
+subtitle: "Proyecto Ciencia de Datos 1 | Telco Customer Churn"
+author: "Alonso Untiveros"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: false
+    df_print: paged
+    self_contained: true
+---
+
+<style>
+body {
+  background: linear-gradient(135deg,#061826,#123456,#07111f);
+  color: #EAF4FF;
+  font-family: Arial, sans-serif;
+}
+
+.main-container {
+  max-width: 1100px;
+}
+
+h1 {
+  color: #FF8C2A;
+  text-align: center;
+  font-size: 42px;
+  text-shadow: 0 0 14px rgba(255,140,42,0.5);
+  border-bottom: 3px solid #FF8C2A;
+  padding-bottom: 12px;
+}
+
+h2 {
+  color: #FF8C2A;
+  border-left: 7px solid #FF8C2A;
+  padding-left: 15px;
+  margin-top: 40px;
+  text-shadow: 0 0 10px rgba(255,140,42,0.35);
+}
+
+h3 {
+  color: #8EDBFF;
+}
+
+p, li {
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.card {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(118,215,255,0.35);
+  border-radius: 18px;
+  padding: 20px;
+  margin: 20px 0;
+  box-shadow: 0 0 22px rgba(0,178,255,0.18);
+}
+
+.interpretacion {
+  background: rgba(2,12,24,0.95);
+  border-left: 6px solid #FF8C2A;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-top: 12px;
+  margin-bottom: 25px;
+  box-shadow: 0 0 18px rgba(255,140,42,0.18);
+}
+
+.kpi-container {
+  display: flex;
+  gap: 15px;
+  margin-top: 25px;
+  margin-bottom: 25px;
+}
+
+.kpi {
+  flex: 1;
+  background: linear-gradient(145deg,#0d3658,#041222);
+  border: 1px solid #76D7FF;
+  border-radius: 18px;
+  padding: 18px;
+  text-align: center;
+  box-shadow: 0 0 18px rgba(0,178,255,0.25);
+}
+
+.kpi-value {
+  font-size: 30px;
+  font-weight: bold;
+  color: #FF8C2A;
+}
+
+.kpi-label {
+  font-size: 13px;
+  color: #D7F3FF;
+}
+
+table {
+  color: #EAF4FF;
+  background-color: rgba(255,255,255,0.05);
+}
+
+thead {
+  background-color: rgba(255,140,42,0.35);
+  color: white;
+}
+
+caption {
+  color: #FF8C2A;
+  font-weight: bold;
+}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  fig.align = "center",
+  fig.width = 8,
+  fig.height = 5
+)
+
+packages <- c("ggplot2", "dplyr", "tidyr", "readr", "knitr", "scales")
+
+for (pkg in packages) {
+  if (!require(pkg, character.only = TRUE)) {
+    install.packages(pkg, dependencies = TRUE)
+    library(pkg, character.only = TRUE)
+  }
+}
+
+set.seed(42)
+
+urls <- c(
+  "https://raw.githubusercontent.com/IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv",
+  "https://raw.githubusercontent.com/blastchar/telco-customer-churn/master/WA_Fn-UseC_-Telco-Customer-Churn.csv"
+)
+
+df <- NULL
+
+for (u in urls) {
+  try({
+    df <- readr::read_csv(u, show_col_types = FALSE)
+  }, silent = TRUE)
+  if (!is.null(df)) break
+}
+
+if (is.null(df)) {
+  stop("No se pudo cargar el dataset desde internet. Descarga el CSV y colócalo en la misma carpeta del Rmd.")
+}
+
+df <- df %>%
+  mutate(
+    TotalCharges = suppressWarnings(as.numeric(TotalCharges)),
+    Churn_bin = ifelse(Churn == "Yes", 1, 0)
+  )
+
+df_fe <- df %>%
+  select(-customerID) %>%
+  mutate(
+    avg_charge_per_month = TotalCharges / (tenure + 1),
+    is_new_customer = ifelse(tenure <= 6, 1, 0),
+    long_term_contract = ifelse(Contract %in% c("One year", "Two year"), 1, 0),
+    PhoneService_bin = ifelse(PhoneService == "Yes", 1, 0),
+    OnlineSecurity_bin = ifelse(OnlineSecurity == "Yes", 1, 0),
+    OnlineBackup_bin = ifelse(OnlineBackup == "Yes", 1, 0),
+    DeviceProtection_bin = ifelse(DeviceProtection == "Yes", 1, 0),
+    TechSupport_bin = ifelse(TechSupport == "Yes", 1, 0),
+    StreamingTV_bin = ifelse(StreamingTV == "Yes", 1, 0),
+    StreamingMovies_bin = ifelse(StreamingMovies == "Yes", 1, 0),
+    service_count = PhoneService_bin + OnlineSecurity_bin + OnlineBackup_bin +
+      DeviceProtection_bin + TechSupport_bin + StreamingTV_bin + StreamingMovies_bin,
+    electronic_monthly_risk = ifelse(
+      PaymentMethod == "Electronic check" & Contract == "Month-to-month",
+      1, 0
+    )
+  )
+```
+
+
+Predicción de Churn con Redes Neuronales
+<div class="card">
+
+El presente informe desarrolla un modelo predictivo para estimar la probabilidad de abandono de clientes (churn) utilizando el dataset Telco Customer Churn. Se implementaron redes neuronales mediante Keras y scikit-learn, además de un modelo clásico Random Forest como referencia comparativa.
+
+El proyecto incluye análisis exploratorio, preprocesamiento, ingeniería de variables, tuning de hiperparámetros, evaluación, interpretabilidad y análisis de errores.
+
+</div> <div class="kpi-container"> <div class="kpi"> <div class="kpi-value">7043</div> <div class="kpi-label">Clientes analizados</div> </div> <div class="kpi"> <div class="kpi-value">0.852</div> <div class="kpi-label">ROC-AUC Keras Final</div> </div> <div class="kpi"> <div class="kpi-value">0.636</div> <div class="kpi-label">F1 Random Forest</div> </div> <div class="kpi"> <div class="kpi-value">848</div> <div class="kpi-label">Predicciones correctas</div> </div> </div>
+
+1. Objetivo del proyecto
+<div class="card">
+El objetivo fue construir, ajustar, interpretar y comparar modelos predictivos capaces de estimar si un cliente abandonará o no el servicio.
+El problema se abordó como una tarea de **clasificación binaria supervisada**, donde la variable objetivo fue **Churn**. </div>
+
+2. Dataset y análisis exploratorio
+<div class="card">
+El dataset contiene información de r nrow(df) clientes y r ncol(df) variables originales, relacionadas con datos demográficos, servicios contratados, tipo de contrato, método de pago y cargos del cliente.</div>
+
+
+```{r}
+ggplot(df, aes(x = Churn, fill = Churn)) +
+  geom_bar() +
+  labs(
+    title = "Distribución de la variable objetivo Churn",
+    x = "Churn",
+    y = "Cantidad de clientes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5),
+    legend.position = "none"
+  )
+```
+
+<div class="interpretacion">
+
+La distribución evidencia que existe una mayor cantidad de clientes que permanecen en el servicio frente a aquellos que abandonan. Esto muestra un desbalance moderado entre clases, por lo que el desempeño del modelo no debe evaluarse únicamente con Accuracy. En este contexto, métricas como F1-score, ROC-AUC y PR-AUC permiten analizar mejor la capacidad para detectar clientes con riesgo de churn.
+
+</div>
+
+```{r}
+missing_df <- df %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "missing") %>%
+  filter(missing > 0) %>%
+  arrange(desc(missing))
+
+ggplot(missing_df, aes(x = reorder(variable, missing), y = missing)) +
+  geom_col(fill = "#FF8C2A") +
+  coord_flip() +
+  labs(
+    title = "Valores faltantes por variable",
+    x = "Variable",
+    y = "Cantidad de valores faltantes"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5)
+  )
+```
+
+<div class="interpretacion">
+El análisis de valores faltantes muestra que la variable TotalCharges presenta registros vacíos luego de ser convertida a formato numérico. Estos valores fueron tratados posteriormente mediante imputación con la mediana dentro del pipeline de preprocesamiento, evitando eliminar observaciones y reduciendo pérdida de información.
+</div>
+
+```{r}
+df_long_num <- df %>%
+  select(tenure, MonthlyCharges, TotalCharges) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "valor")
+
+ggplot(df_long_num, aes(x = valor)) +
+  geom_histogram(bins = 30, fill = "#2C7FB8", color = "white") +
+  facet_wrap(~variable, scales = "free") +
+  labs(
+    title = "Distribución de variables numéricas principales",
+    x = "Valor",
+    y = "Frecuencia"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5)
+  )
+```
+3. Preprocesamiento
+<div class="card">
+El preprocesamiento incluyó tratamiento de valores perdidos, codificación de variables categóricas, escalamiento, partición train/validation/test y control de data leakage. La variable customerID fue retirada porque es un identificador único y no aporta información predictiva real.
+</div>
+
+```{r}
+preproc_table <- data.frame(
+  Etapa = c(
+    "Valores perdidos",
+    "Variables categóricas",
+    "Variables numéricas",
+    "Partición de datos",
+    "Control de leakage"
+  ),
+  Técnica = c(
+    "Imputación con mediana/moda",
+    "OneHotEncoder",
+    "StandardScaler",
+    "Train / Validation / Test",
+    "Pipeline ajustado solo con entrenamiento"
+  )
+)
+
+knitr::kable(preproc_table, caption = "Resumen del preprocesamiento aplicado")
+```
+<div class="interpretacion">
+El pipeline fue ajustado únicamente con los datos de entrenamiento y luego aplicado a validación y prueba. Esta práctica evita data leakage, ya que impide que información del conjunto de prueba influya en el aprendizaje del modelo.
+</div>
+
+4. Ingeniería de variables
+<div class="card">
+Se crearon cinco variables derivadas para capturar patrones de comportamiento del cliente asociados al abandono.
+</div>
+
+```{r}
+fe_summary <- df_fe %>%
+  group_by(Churn) %>%
+  summarise(
+    cargo_promedio_mensual = mean(avg_charge_per_month, na.rm = TRUE),
+    cliente_nuevo = mean(is_new_customer, na.rm = TRUE),
+    contrato_largo_plazo = mean(long_term_contract, na.rm = TRUE),
+    cantidad_servicios = mean(service_count, na.rm = TRUE),
+    riesgo_pago_electronico_mensual = mean(electronic_monthly_risk, na.rm = TRUE)
+  )
+
+knitr::kable(fe_summary, digits = 3, caption = "Promedio de variables derivadas según Churn")
+```
+
+<div class="interpretacion">
+Las variables derivadas permiten representar mejor patrones de riesgo. Por ejemplo, cliente nuevo permite capturar abandono temprano, contrato de largo plazo representa estabilidad contractual, cantidad de servicios contratados mide vinculación con la empresa y riesgo por pago electrónico mensual identifica un perfil potencialmente más sensible al churn.
+</div>
+
+5. Modelo Keras
+<div class="card">
+Se implementó una red neuronal tipo perceptrón multicapa usando Keras. El modelo final incluyó tuning de hiperparámetros, regularización L2, dropout, early stopping, selección de learning rate, batch size y arquitectura de capas.
+</div>
+
+```{r}
+keras_results <- data.frame(
+  Modelo = "Keras Final",
+  Accuracy = 0.802271,
+  F1_score = 0.595745,
+  ROC_AUC = 0.852333,
+  PR_AUC = 0.665539
+)
+
+knitr::kable(keras_results, digits = 3, caption = "Resultados del modelo Keras final")
+```
+<div class="interpretacion">
+El modelo Keras Final obtuvo Accuracy = 0.802, F1-score = 0.596, ROC-AUC = 0.852 y PR-AUC = 0.666. El ROC-AUC indica una buena capacidad para diferenciar clientes que abandonan de aquellos que permanecen.
+</div>
+
+```{r}
+cm <- matrix(c(691, 86, 126, 154), nrow = 2, byrow = TRUE)
+cm_df <- as.data.frame(as.table(cm))
+colnames(cm_df) <- c("Real", "Predicho", "Frecuencia")
+cm_df$Real <- factor(cm_df$Real, labels = c("No Churn", "Churn"))
+cm_df$Predicho <- factor(cm_df$Predicho, labels = c("No Churn", "Churn"))
+
+ggplot(cm_df, aes(x = Predicho, y = Real, fill = Frecuencia)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Frecuencia), color = "white", size = 6, fontface = "bold") +
+  scale_fill_gradient(low = "#0B1F33", high = "#FF8C2A") +
+  labs(
+    title = "Matriz de Confusión - Modelo Keras Final",
+    x = "Predicción",
+    y = "Valor real"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5)
+  )
+```
+<div class="interpretacion">
+La matriz de confusión muestra 691 verdaderos negativos, 154 verdaderos positivos, 86 falsos positivos y 126 falsos negativos. Los falsos negativos son el error más crítico, ya que representan clientes que abandonaron el servicio pero no fueron detectados oportunamente por el modelo.
+</div>
+
+6. Modelo scikit-learn
+<div class="card">
+Como segunda librería se utilizó scikit-learn mediante MLPClassifier, una red neuronal tipo perceptrón multicapa. Esto permitió comparar dos implementaciones de redes neuronales sobre el mismo conjunto de datos procesado.
+</div>
+
+```{r}
+sklearn_results <- data.frame(
+  Modelo = "MLP scikit-learn",
+  Accuracy = 0.795648,
+  F1_score = 0.524229,
+  ROC_AUC = 0.849979,
+  PR_AUC = 0.662749
+)
+
+knitr::kable(sklearn_results, digits = 3, caption = "Resultados del modelo MLP scikit-learn")
+```
+<div class="interpretacion">
+El modelo MLP de scikit-learn alcanzó un ROC-AUC = 0.850, muy cercano al modelo Keras. Sin embargo, su F1-score = 0.524 fue menor, lo cual refleja una menor capacidad para equilibrar precisión y recall en la clase churn.
+</div>
+
+7. Ablation Study y comparación de modelos
+```{r}
+results_df <- data.frame(
+  Modelo = c("Keras Final", "MLP scikit-learn", "Random Forest"),
+  Accuracy = c(0.802271, 0.795648, 0.762535),
+  F1_score = c(0.595745, 0.524229, 0.635704),
+  ROC_AUC = c(0.852333, 0.849979, 0.849235),
+  PR_AUC = c(0.665539, 0.662749, 0.667298)
+)
+
+knitr::kable(results_df, digits = 3, caption = "Comparación global de modelos")
+```
+```{r}
+results_long <- results_df %>%
+  pivot_longer(cols = -Modelo, names_to = "Metrica", values_to = "Valor")
+
+ggplot(results_long, aes(x = Modelo, y = Valor, fill = Metrica)) +
+  geom_col(position = "dodge") +
+  ylim(0, 1) +
+  labs(
+    title = "Ablation Study y Comparación de Modelos",
+    x = "Modelo",
+    y = "Valor de la métrica"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5),
+    axis.text.x = element_text(angle = 0, hjust = 0.5)
+  )
+```
+<div class="interpretacion">
+Los resultados muestran que Keras Final obtuvo el mejor desempeño global en Accuracy = 0.802 y ROC-AUC = 0.852, lo que indica una mayor capacidad general para diferenciar clientes con churn y sin churn. Por otro lado, Random Forest obtuvo el mejor F1-score = 0.636 y PR-AUC = 0.667, mostrando mejor equilibrio para detectar clientes churn.
+</div>
+
+8. Interpretabilidad
+
+```{r}
+perm_df <- data.frame(
+  Variable = c(
+    "Antigüedad del cliente",
+    "Contrato de largo plazo",
+    "Cargos acumulados",
+    "Servicio de internet DSL",
+    "Soporte técnico",
+    "Cargo promedio mensual",
+    "Adulto mayor",
+    "Seguridad en línea",
+    "Contrato de dos años",
+    "Género femenino",
+    "Streaming TV",
+    "Internet fibra óptica",
+    "Sin streaming movies",
+    "Género masculino",
+    "Sin líneas múltiples"
+  ),
+  Disminucion_ROC_AUC = c(
+    0.023, 0.019, 0.011, 0.010, 0.006,
+    0.0055, 0.0052, 0.0051, 0.0040, 0.0026,
+    0.0025, 0.0024, 0.0022, 0.0022, 0.0020
+  )
+)
+
+ggplot(perm_df, aes(x = reorder(Variable, Disminucion_ROC_AUC), y = Disminucion_ROC_AUC)) +
+  geom_col(fill = "#2C7FB8") +
+  coord_flip() +
+  labs(
+    title = "Permutation Importance - Variables más relevantes",
+    x = "Variable",
+    y = "Disminución del ROC-AUC"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5)
+  )
+```
+<div class="interpretacion">
+Las variables con mayor impacto fueron antigüedad del cliente y contrato de largo plazo. Al alterar la antigüedad, el ROC-AUC disminuye aproximadamente en 0.023, mientras que al alterar el contrato de largo plazo disminuye cerca de 0.019. Esto confirma que la permanencia histórica y la estabilidad contractual son factores clave para explicar el churn.
+</div>
+
+9. Análisis de errores
+
+```{r}
+error_summary <- data.frame(
+  Tipo = c("Correcto", "Falso negativo", "Falso positivo"),
+  Cantidad = c(848, 126, 83),
+  Probabilidad_promedio = c(0.246943, 0.319662, 0.604443),
+  Probabilidad_minima = c(0.005198, 0.049293, 0.502389),
+  Probabilidad_maxima = c(0.865395, 0.496591, 0.823753)
+)
+
+knitr::kable(error_summary, digits = 3, caption = "Resumen de errores del modelo")
+```
+
+```{r}
+ggplot(error_summary, aes(x = Tipo, y = Cantidad, fill = Tipo)) +
+  geom_col() +
+  labs(
+    title = "Cantidad de casos por tipo de clasificación",
+    x = "Tipo de caso",
+    y = "Cantidad"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    plot.title = element_text(color = "#FF8C2A", face = "bold", hjust = 0.5),
+    legend.position = "none"
+  )
+```
+<div class="interpretacion">
+El modelo obtuvo 848 predicciones correctas, 126 falsos negativos y 83 falsos positivos. Los falsos negativos tuvieron una probabilidad promedio de churn de 0.320, lo que indica que el modelo subestimó el riesgo en ciertos clientes que sí abandonaron. Los falsos positivos presentaron una probabilidad promedio de 0.604, evidenciando sobreestimación del riesgo en algunos perfiles ambiguos.
+</div>
+
+10. Conclusión final
+
+<div class="card">
+El proyecto permitió construir un flujo completo de ciencia de datos para predecir abandono de clientes en el dataset Telco Customer Churn. Se implementaron redes neuronales en Keras y scikit-learn, además de un modelo clásico Random Forest para comparación.
+</div> 
+
+<div class="card">
+El modelo Keras Final obtuvo el mejor desempeño global, con Accuracy = 0.802, ROC-AUC = 0.852 y F1-score = 0.596, demostrando una buena capacidad para diferenciar clientes que abandonan de aquellos que permanecen.
+</div> 
+
+<div class="card">
+Desde la interpretabilidad, las variables más importantes fueron la antigüedad del cliente, el tipo de contrato, los cargos acumulados, el cargo promedio mensual, el soporte técnico y los servicios contratados. Estos hallazgos son coherentes con la lógica del negocio, ya que clientes con menor antigüedad, contratos mensuales y menor vinculación suelen presentar mayor riesgo de abandono.
+</div> 
+
+<div class="card">
+El análisis de errores mostró que los falsos negativos son el principal desafío del modelo, debido a que representan clientes que abandonan pero no fueron detectados oportunamente. Como mejora futura, se recomienda ajustar el umbral de clasificación, incorporar nuevas variables de comportamiento y priorizar estrategias de retención sobre clientes con probabilidades intermedias de churn.
+</div> 
